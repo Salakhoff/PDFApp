@@ -81,4 +81,14 @@ final class PDFEditorViewModel {
 
         isSaving = false
     }
+    
+    /// Отменяет последний штрих рисования через текущий PDFView.
+    func undo() {
+        pdfView?.undoDrawing()
+    }
+
+    /// Повторяет отменённый штрих рисования через текущий PDFView.
+    func redo() {
+        pdfView?.redoDrawing()
+    }
 }

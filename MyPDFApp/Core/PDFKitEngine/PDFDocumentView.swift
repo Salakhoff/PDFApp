@@ -74,6 +74,26 @@ final class PDFDocumentView: PDFView {
         
         print("✅ PDF сохранён по пути: \(fileURL)")
     }
+    
+    /// Отменяет последний штрих рисования на текущей странице.
+    func undoDrawing() {
+        guard
+            let pdfPage = currentPage as? PDFDocumentPage,
+            let overlayView = overlay.pageToViewMapping[pdfPage]
+        else { return }
+
+        overlayView.canvasView.undoManager?.undo()
+    }
+
+    /// Повторяет последнюю отменённую операцию рисования на текущей странице.
+    func redoDrawing() {
+        guard
+            let pdfPage = currentPage as? PDFDocumentPage,
+            let overlayView = overlay.pageToViewMapping[pdfPage]
+        else { return }
+
+        overlayView.canvasView.undoManager?.redo()
+    }
 }
 
 // MARK: - Private Configuration

@@ -1,36 +1,62 @@
 import SwiftUI
 
+/// Экран редактирования PDF.
+/// Показывает документ и кнопки управления режимом рисования/сохранением.
 struct PDFEditorView: View {
     @Bindable var viewModel: PDFEditorViewModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            PDFKitViewRepresentable(
-                pdfURL: viewModel.pdfItem.url,
-                drawingEnabled: viewModel.drawingEnabled,
-                onPDFViewCreated: { pdfView in
-                    viewModel.configurePDFView(pdfView)
-                }
-            )
+        PDFKitViewRepresentable(
+            pdfURL: viewModel.pdfItem.url,
+            drawingEnabled: viewModel.drawingEnabled,
+            onPDFViewCreated: { pdfView in
+                viewModel.configurePDFView(pdfView)
+            }
+        )
+        .navigationTitle(viewModel.pdfItem.name)
+        .navigationBarTitleDisplayMode(.inline)
+        // Кнопки в NavigationBar
+        .toolbar {
+            // Левая часть: Undo / Redo (только в режиме рисования)
+            ToolbarItemGroup(placement: .navigationBarLeading) {
+                if viewModel.drawingEnabled {
+                    Button {
+                        viewModel.undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
 
-            HStack {
-                Button(viewModel.drawingEnabled ? "Завершить рисование" : "Рисовать") {
+                    Button {
+                        viewModel.redo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                }
+            }
+
+            // Правая часть: переключатель рисования + сохранение
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
                     viewModel.toggleDrawing()
+                } label: {
+                    Image(systemName: viewModel.drawingEnabled ? "pencil.slash" : "pencil.tip")
                 }
 
-                Spacer()
-
-                Button(viewModel.isSaving ? "Сохранение..." : "Сохранить") {
+                Button {
                     Task {
                         await viewModel.save()
+                    }
+                } label: {
+                    if viewModel.isSaving {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
                     }
                 }
                 .disabled(viewModel.isSaving)
             }
-            .padding(.horizontal)
         }
-        .navigationTitle(viewModel.pdfItem.name)
-        .navigationBarTitleDisplayMode(.inline)
+        // Алерт ошибки сохранения
         .alert(
             "Ошибка сохранения",
             isPresented: Binding(
@@ -48,6 +74,7 @@ struct PDFEditorView: View {
                 Text(viewModel.saveErrorMessage ?? "Неизвестная ошибка")
             }
         )
+        // Алерт успешного сохранения
         .alert(
             "Готово",
             isPresented: Binding(
