@@ -6,16 +6,34 @@ struct PDFEditorView: View {
     @Bindable var viewModel: PDFEditorViewModel
 
     var body: some View {
-        PDFKitViewRepresentable(
-            pdfURL: viewModel.pdfItem.url,
-            drawingEnabled: viewModel.drawingEnabled,
-            onPDFViewCreated: { pdfView in
-                viewModel.configurePDFView(pdfView)
+        ZStack(alignment: .topLeading) {
+            PDFKitViewRepresentable(
+                pdfURL: viewModel.pdfItem.url,
+                drawingEnabled: viewModel.drawingEnabled,
+                showThumbnails: viewModel.thumbnailVisible,
+                onPDFViewCreated: { pdfView in
+                    viewModel.configurePDFView(pdfView)
+                }
+            )
+
+            // Круглая кнопка показа/скрытия миниатюр в левом верхнем углу поверх PDF.
+            Button {
+                viewModel.toggleThumbnails()
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .background(
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.85))
+                    )
+                    .shadow(radius: 4)
             }
-        )
+            .padding()
+        }
         .navigationTitle(viewModel.pdfItem.name)
         .navigationBarTitleDisplayMode(.inline)
-        // Кнопки в NavigationBar
         .toolbar {
             // Левая часть: Undo / Redo (только в режиме рисования)
             ToolbarItemGroup(placement: .navigationBarLeading) {
@@ -34,7 +52,7 @@ struct PDFEditorView: View {
                 }
             }
 
-            // Правая часть: переключатель рисования + сохранение
+            // Правая часть: рисование + сохранение
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button {
                     viewModel.toggleDrawing()

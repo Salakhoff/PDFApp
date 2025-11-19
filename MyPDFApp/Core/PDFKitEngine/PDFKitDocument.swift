@@ -120,6 +120,7 @@ extension PDFKitDocument {
 
         // Сохраняем сериализованные данные PKDrawing в аннотацию.
         let codedData = drawing.dataRepresentation()
+        
         newAnnotation.setValue(
             codedData,
             forAnnotationKey: DrawingAnnotation.AnnotationKey.drawingData
