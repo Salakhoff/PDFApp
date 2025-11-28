@@ -37,9 +37,11 @@ final class PDFDocumentView: PDFView {
     
     // MARK: Public API
     
-    /// Загружает PDF-документ из указанного URL и настраивает отображение.
+    /// Загружает PDF-документ из указанного URL и ищет JSON с аннотациями.
     func loadPDF(url: URL?) {
         guard let url else { return }
+        
+        resetDrawingState()
         
         let document = PDFKitDocument(fileURL: url)
         self.pdfDocument = document
@@ -49,6 +51,27 @@ final class PDFDocumentView: PDFView {
             
             do {
                 try await document.openAsync()
+                
+                // --- FIX: Устанавливаем делегат СРАЗУ после открытия ---
+                // Это критически важно сделать ДО того, как мы начнем обращаться к страницам
+                // в importAnnotationsFromJSON. Иначе PDFKit создаст стандартные PDFPage,
+                // у которых нет свойства drawing, и импорт не сработает.
+                document.pdfDocument?.delegate = self
+                // -------------------------------------------------------
+                
+                // --- ЛОГИКА ЗАГРУЗКИ JSON ---
+                let jsonURL = url.deletingPathExtension().appendingPathExtension("json")
+                
+                if FileManager.default.fileExists(atPath: jsonURL.path) {
+                    if let data = try? Data(contentsOf: jsonURL) {
+                        let success = document.importAnnotationsFromJSON(data)
+                        if success {
+                            print("✅ Аннотации восстановлены из JSON")
+                        }
+                    }
+                }
+                // -----------------------------
+                
                 configureDocumentLoading(success: true)
             } catch {
                 print("❌ Ошибка открытия PDF: \(error)")
@@ -62,17 +85,53 @@ final class PDFDocumentView: PDFView {
         isScrollEnabled = !isEnable
     }
     
-    /// Сохраняет текущий документ с рисунками в указанную директорию.
+    /// Сохраняет текущий документ с рисунками и JSON-аннотациями в указанную директорию.
     func saveTo(url: URL, fileName: String) async throws {
         guard let document = pdfDocument else { return }
         
-        let fileURL = url.appendingPathComponent(fileName)
+        // 1. Пути к файлам
+        let pdfURL = url.appendingPathComponent(fileName)
+        // Имя JSON файла такое же, но с расширением .json
+        let jsonFileName = fileName.replacingOccurrences(of: ".pdf", with: ".json")
+        let jsonURL = url.appendingPathComponent(jsonFileName)
         
+        // 2. Экспорт аннотаций в JSON (до закрытия документа!)
+        print("💾 Начинаем сохранение...")
+        
+        let annotationsData = document.exportAnnotationsAsJSON()
+        
+        // --- LOG JSON ---
+        if let data = annotationsData, let jsonString = String(data: data, encoding: .utf8) {
+            print("\n📦 --- JSON PAYLOAD ДЛЯ БЭКЕНДА ---")
+            print(jsonString)
+            print("📦 -------------------------------\n")
+        }
+        // ----------------
+        
+        resetDrawingState()
+        
+        // 3. Закрываем документ перед перезаписью PDF
         try await document.closeAsync()
         
-        try await document.saveAsync(to: fileURL, for: .forOverwriting)
+        // 4. Сохраняем PDF (без burn-in, благодаря изменениям в PDFKitDocument)
+        try await document.saveAsync(to: pdfURL, for: .forOverwriting)
         
-        print("✅ PDF сохранён по пути: \(fileURL)")
+        // 5. Сохраняем JSON файл рядом
+        if let data = annotationsData {
+            try data.write(to: jsonURL)
+            print("✅ JSON аннотаций сохранён: \(jsonURL.lastPathComponent)")
+        }
+        
+        print("✅ PDF сохранён по пути: \(pdfURL)")
+        
+        // После сохранения нужно переоткрыть документ, чтобы продолжить работу
+        try await document.openAsync()
+        
+        // --- FIX: Устанавливаем делегат СРАЗУ после переоткрытия ---
+        document.pdfDocument?.delegate = self
+        // -----------------------------------------------------------
+        
+        configureDocumentLoading(success: true)
     }
     
     /// Отменяет последний штрих рисования на текущей странице.
@@ -161,6 +220,8 @@ private extension PDFDocumentView {
         guard let pdfPage = currentPage as? PDFDocumentPage else { return }
         guard let overlayView = overlay.pageToViewMapping[pdfPage] else { return }
 
+        guard overlayView.window != nil else { return }
+        
         let targetVisible = isEnable
         let currentVisible = toolPicker.isVisible
 
@@ -178,6 +239,24 @@ private extension PDFDocumentView {
             toolPicker.removeObserver(overlayView.canvasView)
             overlayView.canvasView.resignFirstResponder()
         }
+    }
+    
+    /// Сбрасывает состояние рисования и очищает связи с ToolPicker.
+    /// Необходимо вызывать перед загрузкой нового документа или перезагрузкой текущего.
+    func resetDrawingState() {
+        // Проходимся по всем активным overlay view
+        overlay.pageToViewMapping.values.forEach { view in
+            // Если тулпикер был видим для этой вьюхи — скрываем
+            if toolPicker.isVisible {
+                toolPicker.setVisible(false, forFirstResponder: view.canvasView)
+            }
+            // Отписываемся и убираем фокус
+            toolPicker.removeObserver(view.canvasView)
+            view.canvasView.resignFirstResponder()
+        }
+        
+        // Очищаем кэш
+        overlay.pageToViewMapping.removeAll()
     }
 }
 

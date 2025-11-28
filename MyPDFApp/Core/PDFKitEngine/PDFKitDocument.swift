@@ -48,7 +48,7 @@ final class PDFKitDocument: UIDocument {
     /// Вызывается автоматически при сохранении через UIDocument.
     ///
     /// - Parameter typeName: Тип файла для сохранения.
-    /// - Returns: Данные PDF-документа с "встроенными" (burn-in) аннотациями.
+    /// - Returns: Данные PDF-документа
     /// - Throws: Ничего не выбрасывает, возвращает пустой Data() в случае ошибки.
     override func contents(forType typeName: String) throws -> Any {
         guard let pdfDocument else { return Data() }
@@ -59,12 +59,9 @@ final class PDFKitDocument: UIDocument {
             addDrawingAnnotation(page)
         }
 
-        // Опция burnInAnnotationsOption "впечатывает" аннотации в PDF, делая их частью изображения.
-        let options: [PDFDocumentWriteOption: Any] = [
-            .burnInAnnotationsOption: true
-        ]
-
-        return pdfDocument.dataRepresentation(options: options) ?? Data()
+        // Сохраняем PDF с аннотациями как отдельными объектами (без burn-in).
+        // Это позволяет другим приложениям редактировать аннотации.
+        return pdfDocument.dataRepresentation() ?? Data()
     }
 }
 
@@ -179,5 +176,103 @@ extension PDFKitDocument {
                 }
             }
         }
+    }
+}
+
+extension PDFKitDocument {
+    
+    /// Экспортирует аннотации документа в JSON формат (Data)
+    /// Используется для отправки на бэкенд вместе с PDF файлом.
+    func exportAnnotationsAsJSON() -> Data? {
+        guard let pdfDocument = pdfDocument else { return nil }
+        
+        var annotationsDTO: [DrawingAnnotationDTO] = []
+        
+        for index in 0..<pdfDocument.pageCount {
+            guard let page = pdfDocument.page(at: index) as? PDFDocumentPage else { continue }
+            
+            // Если на странице есть рисунок
+            if !page.drawing.strokes.isEmpty {
+                let mediaBox = page.bounds(for: .mediaBox)
+                // Используем наш extension для конвертации
+                let dto = page.drawing.toDTO(pageIndex: index, mediaBox: mediaBox)
+                annotationsDTO.append(dto)
+            }
+        }
+        
+        // Сериализуем массив DTO в JSON
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted // Для читаемости, можно убрать в продакшене
+        return try? encoder.encode(annotationsDTO)
+    }
+    
+    /// Импортирует аннотации из JSON данных и применяет их к документу.
+    /// Используется при получении обновленных данных с бэкенда/Android.
+    /// - Returns: Bool - успешно ли прошел импорт
+    @MainActor
+    func importAnnotationsFromJSON(_ jsonData: Data) -> Bool {
+        guard let pdfDocument = pdfDocument else {
+            print("❌ importAnnotationsFromJSON: pdfDocument is nil")
+            return false
+        }
+        
+        let decoder = JSONDecoder()
+        guard let annotationsDTO = try? decoder.decode([DrawingAnnotationDTO].self, from: jsonData) else {
+            print("❌ Ошибка декодирования JSON аннотаций")
+            return false
+        }
+        
+        print("📥 Начало импорта аннотаций. Найдено страниц с данными: \(annotationsDTO.count)")
+        
+        for dto in annotationsDTO {
+            // Пропускаем невалидные индексы
+            guard dto.pageIndex >= 0 && dto.pageIndex < pdfDocument.pageCount else {
+                print("⚠️ Пропуск невалидного индекса страницы: \(dto.pageIndex)")
+                continue
+            }
+            
+            // Получаем страницу (должна быть PDFDocumentPage благодаря делегату)
+            guard let page = pdfDocument.page(at: dto.pageIndex) as? PDFDocumentPage else {
+                print("⚠️ Страница \(dto.pageIndex) не является PDFDocumentPage (делегат не сработал?)")
+                continue
+            }
+            
+            // 1. Восстанавливаем "живой" рисунок
+            let newDrawing = dto.toPKDrawing()
+            page.drawing = newDrawing
+            print("✅ Страница \(dto.pageIndex): Восстановлено штрихов: \(newDrawing.strokes.count)")
+            
+            // 2. Удаление старых аннотаций (дубликатов из PDF-файла)
+            // Ищем любые аннотации, которые похожи на наши рисунки
+            let annotationsToRemove = page.annotations.filter { annotation in
+                // А. Если это наш кастомный класс
+                if annotation is DrawingAnnotation { return true }
+                
+                // Б. Если аннотация содержит наши данные (ключ drawingData)
+                // Используем строковый ключ для надежности
+                if annotation.value(forAnnotationKey: PDFAnnotationKey(rawValue: "drawingData")) != nil {
+                    return true
+                }
+                
+                // В. Если это Stamp, который мы сами создали ранее (можно проверить наличие ключа mediaBoxHeight)
+                if annotation.type == "Stamp",
+                   annotation.value(forAnnotationKey: PDFAnnotationKey(rawValue: "pdfPageMediaBoxHeight")) != nil {
+                    return true
+                }
+                
+                return false
+            }
+            
+            if !annotationsToRemove.isEmpty {
+                print("🗑 Страница \(dto.pageIndex): Удалено старых PDF-аннотаций: \(annotationsToRemove.count)")
+                for annotation in annotationsToRemove {
+                    page.removeAnnotation(annotation)
+                }
+            } else {
+                print("ℹ️ Страница \(dto.pageIndex): Старых аннотаций не найдено (возможно, они уже удалены или не распознаны)")
+            }
+        }
+        
+        return true
     }
 }
