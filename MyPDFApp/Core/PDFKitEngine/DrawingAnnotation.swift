@@ -39,24 +39,32 @@ final class DrawingAnnotation: PDFAnnotation {
     // MARK: - Drawing
 
     /// Отрисовывает рисунок PencilKit поверх PDF-страницы с учётом масштаба и преобразования координат.
-    override func draw(with box: PDFDisplayBox, in context: CGContext) {
-        guard page is PDFDocumentPage else { return }
-        guard let drawing, let mediaBoxHeight else { return }
+        override func draw(with box: PDFDisplayBox, in context: CGContext) {
+            guard page is PDFDocumentPage else { return }
+            guard let drawing, let mediaBoxHeight else { return }
 
-        UIGraphicsPushContext(context)
-        context.saveGState()
+            // ЗАЩИТА: Проверяем, что bounds имеет валидные размеры
+            let bounds = drawing.bounds
+            guard bounds.width > 0, bounds.height > 0 else {
+                 // Если рисунок пустой или имеет нулевой размер, рисовать нечего
+                 return
+            }
 
-        context.concatenate(makePDFTransform(verticalShift: mediaBoxHeight))
+            UIGraphicsPushContext(context)
+            context.saveGState()
 
-        let image = drawing.image(
-            from: drawing.bounds,
-            scale: currentDisplayScale(from: context)
-        )
-        image.draw(in: drawing.bounds)
+            context.concatenate(makePDFTransform(verticalShift: mediaBoxHeight))
 
-        context.restoreGState()
-        UIGraphicsPopContext()
-    }
+            // Используем проверенный bounds
+            let image = drawing.image(
+                from: bounds,
+                scale: currentDisplayScale(from: context)
+            )
+            image.draw(in: bounds)
+
+            context.restoreGState()
+            UIGraphicsPopContext()
+        }
 }
 
 // MARK: - Private Helpers
