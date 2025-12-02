@@ -14,8 +14,8 @@ struct DrawingAnnotationDTO: Codable {
 
 /// Прямоугольник (bounds страницы)
 struct RectDTO: Codable {
-    let x: Double
-    let y: Double
+//    let x: Double
+//    let y: Double
     let width: Double
     let height: Double
 }
@@ -23,13 +23,13 @@ struct RectDTO: Codable {
 struct StrokePointDTO: Codable {
     let x: Double
     let y: Double
-    let timeOffset: Double
+//    let timeOffset: Double
     let width: Double
     let height: Double
     let opacity: Double
-    let force: Double
-    let azimuth: Double
-    let altitude: Double
+//    let force: Double
+//    let azimuth: Double
+//    let altitude: Double
 }
 
 struct StrokeDTO: Codable {
@@ -46,43 +46,22 @@ struct ColorDTO: Codable {
     let alpha: Double
 }
 
-struct SegmentDTO: Codable {
-    
-    /// Временное смещение от начала штриха (в секундах)
-    let timeOffset: Double
-    
-    /// Основная точка
-    let point: PointDTO
-    
-    /// Первая контрольная точка (для кривых Безье)
-    let controlPoint1: PointDTO?
-    
-    /// Вторая контрольная точка (для кривых Безье)
-    let controlPoint2: PointDTO?
-}
-
-/// Точка с координатами
-struct PointDTO: Codable {
-    let x: Double
-    let y: Double
-}
-
 extension DrawingAnnotationDTO {
     func toPKDrawing() -> PKDrawing {
         let strokes = self.strokes.compactMap { strokeDTO -> PKStroke? in
-            let inkType = PKInk.InkType(rawValue: strokeDTO.tool) ?? .pen
+            let inkType = inkTypeFromShortName(strokeDTO.tool) ?? .pen
             let color = strokeDTO.color.toUIColor()
             let ink = PKInk(inkType, color: color)
             
             let pathPoints = strokeDTO.points.map { pointDTO in
                 PKStrokePoint(
                     location: CGPoint(x: pointDTO.x, y: pointDTO.y),
-                    timeOffset: pointDTO.timeOffset,
+                    timeOffset: 0.0,
                     size: CGSize(width: pointDTO.width, height: pointDTO.height),
                     opacity: CGFloat(pointDTO.opacity),
-                    force: CGFloat(pointDTO.force),
-                    azimuth: CGFloat(pointDTO.azimuth),
-                    altitude: CGFloat(pointDTO.altitude)
+                    force: 0.0,
+                    azimuth: CGFloat(1.57),
+                    altitude: CGFloat(1.57)
                 )
             }
             
@@ -101,6 +80,20 @@ extension DrawingAnnotationDTO {
         
         return PKDrawing(strokes: strokes)
     }
+    
+    /// Преобразует короткое имя инструмента обратно в PKInk.InkType.
+    private func inkTypeFromShortName(_ shortName: String) -> PKInk.InkType? {
+        switch shortName.lowercased() {
+        case "pen": return .pen
+        case "marker": return .marker
+        case "pencil": return .pencil
+        case "monoline": return .monoline
+        case "fountainpen": return .fountainPen
+        case "watercolor": return .watercolor
+        case "crayon": return .crayon
+        default: return nil
+        }
+    }
 }
 
 extension ColorDTO {
@@ -116,15 +109,27 @@ extension ColorDTO {
 
 extension PKInk.InkType {
     init?(rawValue: String) {
+        // Сначала пробуем короткий формат
         switch rawValue.lowercased() {
-        case "pen", "com.apple.ink.pen": self = .pen
-        case "marker", "com.apple.ink.marker": self = .marker
-        case "pencil", "com.apple.ink.pencil": self = .pencil
-        case "monoline", "com.apple.ink.monoline": self = .monoline
-        case "fountainpen", "com.apple.ink.fountainpen": self = .fountainPen
-        case "watercolor", "com.apple.ink.watercolor": self = .watercolor
-        case "crayon", "com.apple.ink.crayon": self = .crayon
-        default: return nil
+        case "pen": self = .pen
+        case "marker": self = .marker
+        case "pencil": self = .pencil
+        case "monoline": self = .monoline
+        case "fountainpen": self = .fountainPen
+        case "watercolor": self = .watercolor
+        case "crayon": self = .crayon
+        default:
+            // Fallback на старый формат для обратной совместимости
+            switch rawValue.lowercased() {
+            case "com.apple.ink.pen": self = .pen
+            case "com.apple.ink.marker": self = .marker
+            case "com.apple.ink.pencil": self = .pencil
+            case "com.apple.ink.monoline": self = .monoline
+            case "com.apple.ink.fountainpen": self = .fountainPen
+            case "com.apple.ink.watercolor": self = .watercolor
+            case "com.apple.ink.crayon": self = .crayon
+            default: return nil
+            }
         }
     }
 }

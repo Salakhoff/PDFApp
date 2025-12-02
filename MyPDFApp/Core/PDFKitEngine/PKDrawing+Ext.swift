@@ -7,18 +7,20 @@ extension PKDrawing {
                 StrokePointDTO(
                     x: Double(point.location.x),
                     y: Double(point.location.y),
-                    timeOffset: point.timeOffset,
+                    //                    timeOffset: point.timeOffset,
                     width: point.size.width,
                     height: point.size.height,
                     opacity: point.opacity,
-                    force: point.force,
-                    azimuth: point.azimuth,
-                    altitude: point.altitude
+//                    force: point.force,
+//                    azimuth: point.azimuth,
+//                    altitude: point.altitude
                 )
             }
             
+            let toolShortName = shortToolName(from: stroke.ink.inkType)
+            
             return StrokeDTO(
-                tool: stroke.ink.inkType.rawValue,
+                tool: toolShortName,
                 color: stroke.ink.color.toDTO(),
                 points: pointsDTO
             )
@@ -27,13 +29,28 @@ extension PKDrawing {
         return DrawingAnnotationDTO(
             pageIndex: pageIndex,
             mediaBox: RectDTO(
-                x: Double(mediaBox.origin.x),
-                y: Double(mediaBox.origin.y),
+//                x: Double(mediaBox.origin.x),
+//                y: Double(mediaBox.origin.y),
                 width: Double(mediaBox.width),
                 height: Double(mediaBox.height)
             ),
             strokes: strokesDTO
         )
+    }
+    
+    /// Преобразует PKInk.InkType в короткое читаемое имя для JSON.
+    private func shortToolName(from inkType: PKInk.InkType) -> String {
+        switch inkType {
+        case .pen: "pen"
+        case .marker: "marker"
+        case .pencil: "pencil"
+        case .monoline: "monoline"
+        case .fountainPen: "fountainpen"
+        case .watercolor: "watercolor"
+        case .crayon: "crayon"
+        case .reed: "reed"
+        default: "pen"
+        }
     }
 }
 
