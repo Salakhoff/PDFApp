@@ -23,13 +23,8 @@ struct RectDTO: Codable {
 struct StrokePointDTO: Codable {
     let x: Double
     let y: Double
-//    let timeOffset: Double
-    let width: Double
-    let height: Double
+    let size: Double
     let opacity: Double
-//    let force: Double
-//    let azimuth: Double
-//    let altitude: Double
 }
 
 struct StrokeDTO: Codable {
@@ -57,7 +52,7 @@ extension DrawingAnnotationDTO {
                 PKStrokePoint(
                     location: CGPoint(x: pointDTO.x, y: pointDTO.y),
                     timeOffset: 0.0,
-                    size: CGSize(width: pointDTO.width, height: pointDTO.height),
+                    size: CGSize(width: pointDTO.size, height: pointDTO.size),
                     opacity: CGFloat(pointDTO.opacity),
                     force: 0.0,
                     azimuth: CGFloat(1.57),

@@ -7,13 +7,8 @@ extension PKDrawing {
                 StrokePointDTO(
                     x: Double(point.location.x),
                     y: Double(point.location.y),
-                    //                    timeOffset: point.timeOffset,
-                    width: point.size.width,
-                    height: point.size.height,
+                    size: Double(point.size.width),
                     opacity: point.opacity,
-//                    force: point.force,
-//                    azimuth: point.azimuth,
-//                    altitude: point.altitude
                 )
             }
             
@@ -29,8 +24,6 @@ extension PKDrawing {
         return DrawingAnnotationDTO(
             pageIndex: pageIndex,
             mediaBox: RectDTO(
-//                x: Double(mediaBox.origin.x),
-//                y: Double(mediaBox.origin.y),
                 width: Double(mediaBox.width),
                 height: Double(mediaBox.height)
             ),
