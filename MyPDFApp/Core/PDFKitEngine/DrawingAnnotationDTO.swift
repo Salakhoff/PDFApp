@@ -6,16 +6,21 @@ struct DrawingAnnotationDTO: Codable {
     let pageIndex: Int
     
     /// Размеры MediaBox страницы (для корректного позиционирования)
-    let mediaBox: RectDTO
+    let mediaBox: RectMediaBoxDTO
     
     /// Массив штрихов на странице
     let strokes: [StrokeDTO]
 }
 
 /// Прямоугольник (bounds страницы)
+struct RectMediaBoxDTO: Codable {
+    let width: Double
+    let height: Double
+}
+
 struct RectDTO: Codable {
-//    let x: Double
-//    let y: Double
+    let x: Double
+    let y: Double
     let width: Double
     let height: Double
 }
@@ -23,14 +28,15 @@ struct RectDTO: Codable {
 struct StrokePointDTO: Codable {
     let x: Double
     let y: Double
-    let size: Double
     let opacity: Double
 }
 
 struct StrokeDTO: Codable {
     let tool: String
     let color: ColorDTO
+    let size: Double
     let points: [StrokePointDTO]
+    let bounds: RectDTO
 }
 
 /// Цвет в формате RGBA
@@ -52,7 +58,7 @@ extension DrawingAnnotationDTO {
                 PKStrokePoint(
                     location: CGPoint(x: pointDTO.x, y: pointDTO.y),
                     timeOffset: 0.0,
-                    size: CGSize(width: pointDTO.size, height: pointDTO.size),
+                    size: CGSize(width: strokeDTO.size, height: strokeDTO.size),
                     opacity: CGFloat(pointDTO.opacity),
                     force: 0.0,
                     azimuth: CGFloat(1.57),
@@ -66,7 +72,9 @@ extension DrawingAnnotationDTO {
             }
             
             let path = PKStrokePath(controlPoints: pathPoints, creationDate: Date())
-            return PKStroke(ink: ink, path: path)
+            let stroke = PKStroke(ink: ink, path: path)
+            
+            return stroke
         }
         
         if strokes.isEmpty && !self.strokes.isEmpty {

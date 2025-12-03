@@ -7,23 +7,33 @@ extension PKDrawing {
                 StrokePointDTO(
                     x: Double(point.location.x),
                     y: Double(point.location.y),
-                    size: Double(point.size.width),
-                    opacity: point.opacity,
+                    opacity: point.opacity
                 )
             }
             
             let toolShortName = shortToolName(from: stroke.ink.inkType)
+            let strokeBounds = stroke.renderBounds
+            
+            // Берем размер из первой точки (все точки имеют одинаковый размер)
+            let brushSize = stroke.path.first.map { Double($0.size.width) } ?? 1.0
             
             return StrokeDTO(
                 tool: toolShortName,
                 color: stroke.ink.color.toDTO(),
-                points: pointsDTO
+                size: brushSize,
+                points: pointsDTO,
+                bounds: RectDTO(
+                    x: Double(strokeBounds.origin.x),
+                    y: Double(strokeBounds.origin.y),
+                    width: Double(strokeBounds.width),
+                    height: Double(strokeBounds.height)
+                )
             )
         }
         
         return DrawingAnnotationDTO(
             pageIndex: pageIndex,
-            mediaBox: RectDTO(
+            mediaBox: RectMediaBoxDTO(
                 width: Double(mediaBox.width),
                 height: Double(mediaBox.height)
             ),
