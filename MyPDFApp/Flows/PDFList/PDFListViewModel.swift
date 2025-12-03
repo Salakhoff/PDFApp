@@ -134,4 +134,30 @@ final class PDFListViewModel {
         
         isLoading = false
     }
+    
+    /// Удаляет документ и связанные с ним аннотации локально.
+    /// - Parameter item: PDF документ для удаления
+    func deleteDocument(_ item: PDFItem) async {    
+        do {
+            let fileManager = FileManager.default
+            
+            // 1. Удаляем PDF файл
+            if fileManager.fileExists(atPath: item.url.path) {
+                try fileManager.removeItem(at: item.url)
+            }
+            
+            // 2. Удаляем JSON файл с аннотациями (если существует)
+            let jsonFileName = item.url.deletingPathExtension().lastPathComponent + ".json"
+            let jsonURL = item.url.deletingLastPathComponent().appendingPathComponent(jsonFileName)
+            
+            if fileManager.fileExists(atPath: jsonURL.path) {
+                try fileManager.removeItem(at: jsonURL)
+            }
+            
+            // 3. Обновляем список документов
+            await loadDocuments()
+        } catch {
+            loadErrorMessage = error.localizedDescription
+        }
+    }
 }

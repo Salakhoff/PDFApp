@@ -18,15 +18,23 @@ struct PDFListView: View {
                         description: Text("Нажмите +, чтобы выбрать PDF или обновите из бека.")
                     )
                 } else {
-                    List(viewModel.documents) { item in
-                        NavigationLink(item.name) {
-                            PDFEditorView(
-                                viewModel: .init(pdfItem: item) {
-                                    Task {
-                                        await viewModel.loadDocuments()
+                    List {
+                        ForEach(viewModel.documents) { item in
+                            NavigationLink(item.name) {
+                                PDFEditorView(
+                                    viewModel: .init(pdfItem: item) {
+                                        Task { await viewModel.loadDocuments() }
                                     }
+                                )
+                            }
+                        }
+                        .onDelete { indexSet in
+                            for index in indexSet {
+                                let item = viewModel.documents[index]
+                                Task {
+                                    await viewModel.deleteDocument(item)
                                 }
-                            )
+                            }
                         }
                     }
                 }

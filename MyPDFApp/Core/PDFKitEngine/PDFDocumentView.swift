@@ -101,6 +101,22 @@ final class PDFDocumentView: PDFView {
         
         // 4. Переоткрываем документ для дальнейшей работы
         try await document.openAsync()
+        
+        // 5. Устанавливаем делегат СРАЗУ после открытия (критически важно!)
+        document.pdfDocument?.delegate = self
+        
+        // 6. Загружаем аннотации из JSON (если файл существует)
+        let jsonURL = pdfURL.deletingPathExtension().appendingPathExtension("json")
+        if FileManager.default.fileExists(atPath: jsonURL.path) {
+            if let data = try? Data(contentsOf: jsonURL) {
+                let success = document.importAnnotationsFromJSON(data)
+                if success {
+                    print("✅ Аннотации восстановлены из JSON после сохранения")
+                }
+            }
+        }
+        
+        // 7. Настраиваем view после перезагрузки
         configureDocumentLoading(success: true)
     }
     
