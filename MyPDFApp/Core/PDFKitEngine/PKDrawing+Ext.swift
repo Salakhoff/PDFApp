@@ -2,24 +2,27 @@ import PencilKit
 
 extension PKDrawing {
     
-    /// Формирует DTO из видимых штрихов.
-    /// Учитывает ластик: PKDrawing.strokes содержит информацию о всех операциях.
-    /// При экспорте берём текущее состояние рисунка - ластик уже применён.
+    /// Формирует DTO из видимых штрихов, учитывая маску после работы ластиком.
     func toDTO(pageIndex: Int, mediaBox: CGRect) -> DrawingAnnotationDTO {
         var strokesDTO: [StrokeDTO] = []
+        let bakedDrawing = (try? PKDrawing(data: self.dataRepresentation())) ?? self
         
         for stroke in strokes {
             let brushSize = stroke.path.first.map { Double($0.size.width) } ?? 1.0
             let toolShortName = shortToolName(from: stroke.ink.inkType)
+            let visibleRanges = normalizedRanges(for: stroke)
             
-            guard let dto = makeStrokeDTO(
-                stroke: stroke,
-                toolShortName: toolShortName,
-                brushSize: brushSize
-            ) else {
-                continue
+            for range in visibleRanges {
+                guard let dto = makeStrokeDTO(
+                    stroke: stroke,
+                    range: range,
+                    toolShortName: toolShortName,
+                    brushSize: brushSize
+                ) else {
+                    continue
+                }
+                strokesDTO.append(dto)
             }
-            strokesDTO.append(dto)
         }
         
         return DrawingAnnotationDTO(
@@ -52,13 +55,14 @@ extension PKDrawing {
 
 private extension PKDrawing {
     
-    /// Создаёт DTO из всех точек штриха.
+    /// Создаёт DTO из конкретного видимого диапазона штриха.
     func makeStrokeDTO(
         stroke: PKStroke,
+        range: ClosedRange<CGFloat>,
         toolShortName: String,
         brushSize: Double
     ) -> StrokeDTO? {
-        let points = Array(stroke.path)
+        let points = interpolatedPoints(for: stroke, in: range)
         guard points.count >= 2 else { return nil }
         
         let pointsDTO = points.map { point in
@@ -78,6 +82,68 @@ private extension PKDrawing {
             points: pointsDTO,
             bounds: boundsRect
         )
+    }
+    
+    /// Возвращает валидные диапазоны пути, соответствующие видимой части штриха.
+    func normalizedRanges(for stroke: PKStroke) -> [ClosedRange<CGFloat>] {
+        let pointCount = stroke.path.count
+        guard pointCount > 1 else { return [] }
+        
+        if !stroke.maskedPathRanges.isEmpty {
+            return stroke.maskedPathRanges
+        }
+        
+        let upperBound = CGFloat(pointCount - 1)
+        return [0...upperBound]
+    }
+    
+    /// Возвращает интерполированные точки в пределах диапазона B-сплайна.
+    func interpolatedPoints(for stroke: PKStroke, in range: ClosedRange<CGFloat>) -> [PKStrokePoint] {
+        guard let clampedRange = clamp(range, pathCount: stroke.path.count) else {
+            return []
+        }
+        
+        var collected: [PKStrokePoint] = []
+        collected.append(stroke.path.interpolatedPoint(at: clampedRange.lowerBound))
+        
+        let slice = stroke.path.interpolatedPoints(
+            in: clampedRange,
+            by: .distance(1.0)
+        )
+        
+        slice.forEach { point in
+            appendUnique(point, to: &collected)
+        }
+        
+        if clampedRange.upperBound > clampedRange.lowerBound {
+            let endPoint = stroke.path.interpolatedPoint(at: clampedRange.upperBound)
+            appendUnique(endPoint, to: &collected)
+        }
+        
+        return collected
+    }
+    
+    /// Обрезает диапазон по количеству контрольных точек.
+    func clamp(_ range: ClosedRange<CGFloat>, pathCount: Int) -> ClosedRange<CGFloat>? {
+        guard pathCount > 0 else { return nil }
+        let maxValue = CGFloat(pathCount - 1)
+        let lower = max(0, min(range.lowerBound, maxValue))
+        let upper = max(lower, min(range.upperBound, maxValue))
+        return lower...upper
+    }
+    
+    /// Добавляет точку, избегая подряд идущих дубликатов.
+    func appendUnique(_ point: PKStrokePoint, to array: inout [PKStrokePoint]) {
+        guard let last = array.last else {
+            array.append(point)
+            return
+        }
+        
+        if last.location.equalTo(point.location) {
+            return
+        }
+        
+        array.append(point)
     }
     
     /// Рассчитывает bounds для набора точек с учётом толщины кисти.
