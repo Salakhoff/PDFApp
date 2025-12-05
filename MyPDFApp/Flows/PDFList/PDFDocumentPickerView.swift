@@ -3,8 +3,6 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct PDFDocumentPickerView: UIViewControllerRepresentable {
-    
-    /// Коллбек с выбранным URL (берём первый выбранный файл).
     let onPick: (URL) -> Void
     
     func makeCoordinator() -> Coordinator {
@@ -37,8 +35,6 @@ struct PDFDocumentPickerView: UIViewControllerRepresentable {
             onPick(url)
         }
         
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            // Ничего не делаем, SwiftUI сам закроет sheet
-        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { }
     }
 }

@@ -4,18 +4,28 @@ import Foundation
 @Observable
 final class PDFListViewModel {
     
-    // MARK: - Public Properties
+    // MARK: Public Properties
     
     var documents: [PDFItem] = []
-    var isLoading: Bool = false
+    var isLoading = false
     var loadErrorMessage: String?
     
-    // MARK: - Dependencies
+    // MARK: Dependencies
     
-    /// Сервис Supabase Storage для синхронизации PDF и аннотаций.
-    private let storageService: SupabaseStorageServicing = SupabaseStorageService.shared
+    let storageService: SupabaseStorageServicing
+    private let fileManager: FileManager
     
-    // MARK: - Public API
+    // MARK: Init
+    
+    init(
+        storageService: SupabaseStorageServicing,
+        fileManager: FileManager = .default
+    ) {
+        self.storageService = storageService
+        self.fileManager = fileManager
+    }
+    
+    // MARK: Public API
     
     /// Асинхронно загружает PDF из каталога Documents.
     func loadDocuments() async {
@@ -56,10 +66,8 @@ final class PDFListViewModel {
     }
     
     /// Импортирует выбранный через UIDocumentPicker PDF в каталог Documents
-    /// и обновляет список документов.
     func importDocument(from pickedURL: URL) async {
         do {
-            let fileManager = FileManager.default
             guard let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
                 throw NSError(
                     domain: "PDFListViewModel",
@@ -83,7 +91,6 @@ final class PDFListViewModel {
     }
     
     /// Синхронизирует локальные PDF + JSON с Supabase:
-    /// скачивает все документы из бакета, сохраняет в Documents и обновляет список.
     func syncFromBackend() async {
         isLoading = true
         loadErrorMessage = nil
@@ -91,7 +98,6 @@ final class PDFListViewModel {
         do {
             let remoteDocs = try await storageService.listDocuments()
             
-            let fileManager = FileManager.default
             guard let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
                 throw NSError(
                     domain: "PDFListViewModel",
@@ -101,10 +107,8 @@ final class PDFListViewModel {
             }
             
             for remote in remoteDocs {
-                // 1. Скачиваем PDF + JSON
                 let result = try await storageService.downloadDocument(id: remote.id)
                 
-                // 2. Сохраняем / перезаписываем PDF
                 let pdfFileName = "\(remote.id).pdf"
                 let pdfURL = docsURL.appendingPathComponent(pdfFileName)
                 
@@ -113,7 +117,6 @@ final class PDFListViewModel {
                 }
                 try fileManager.copyItem(at: result.localPDF, to: pdfURL)
                 
-                // 3. Сохраняем / перезаписываем JSON (если есть)
                 if let data = result.annotationsJSON {
                     let jsonFileName = "\(remote.id).json"
                     let jsonURL = docsURL.appendingPathComponent(jsonFileName)
@@ -126,7 +129,6 @@ final class PDFListViewModel {
                 }
             }
             
-            // 4. Обновляем список локальных документов
             await loadDocuments()
         } catch {
             loadErrorMessage = error.localizedDescription
@@ -136,17 +138,12 @@ final class PDFListViewModel {
     }
     
     /// Удаляет документ и связанные с ним аннотации локально.
-    /// - Parameter item: PDF документ для удаления
-    func deleteDocument(_ item: PDFItem) async {    
+    func deleteDocument(_ item: PDFItem) async {
         do {
-            let fileManager = FileManager.default
-            
-            // 1. Удаляем PDF файл
             if fileManager.fileExists(atPath: item.url.path) {
                 try fileManager.removeItem(at: item.url)
             }
             
-            // 2. Удаляем JSON файл с аннотациями (если существует)
             let jsonFileName = item.url.deletingPathExtension().lastPathComponent + ".json"
             let jsonURL = item.url.deletingLastPathComponent().appendingPathComponent(jsonFileName)
             
@@ -154,7 +151,6 @@ final class PDFListViewModel {
                 try fileManager.removeItem(at: jsonURL)
             }
             
-            // 3. Обновляем список документов
             await loadDocuments()
         } catch {
             loadErrorMessage = error.localizedDescription

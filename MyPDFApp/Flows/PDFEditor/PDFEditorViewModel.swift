@@ -65,7 +65,7 @@ final class PDFEditorViewModel {
     init(
         pdfItem: PDFItem,
         onSave: (@MainActor () -> Void)? = nil,
-        storageService: SupabaseStorageServicing = SupabaseStorageService.shared,
+        storageService: SupabaseStorageServicing,
         fileManager: FileManager = .default
     ) {
         self.pdfItem = pdfItem
@@ -74,7 +74,7 @@ final class PDFEditorViewModel {
         self.fileManager = fileManager
     }
     
-    // MARK: - Public API
+    // MARK: Public API
     
     /// Привязывает созданный `PDFDocumentView`, чтобы управлять режимом рисования и сохранением.
     func configurePDFView(_ pdfView: PDFDocumentView) {
@@ -155,7 +155,7 @@ final class PDFEditorViewModel {
         pdfView?.redoDrawing()
     }
     
-    // MARK: - Private
+    // MARK: Private
     
     private func saveAnnotationsIfNeeded(
         _ data: Data?,
