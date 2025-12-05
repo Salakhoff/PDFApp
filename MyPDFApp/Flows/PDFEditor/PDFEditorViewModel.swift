@@ -4,24 +4,52 @@ import Foundation
 @Observable
 final class PDFEditorViewModel {
     
-    // MARK: Public Properties
+    // MARK: Alert state
+    
+    enum SaveAlert: Identifiable, Equatable {
+        case success
+        case error(message: String)
+        
+        var id: String {
+            switch self {
+            case .success: "success"
+            case .error(let message): "error-\(message)"
+            }
+        }
+        
+        var title: String {
+            switch self {
+            case .success: "Готово"
+            case .error: "Ошибка сохранения"
+            }
+        }
+        
+        var messageText: String {
+            switch self {
+            case .success: "PDF успешно сохранён."
+            case .error(let message): message
+            }
+        }
+    }
+    
+    // MARK: Public properties
     
     /// Текущий PDF-файл для редактирования.
     let pdfItem: PDFItem
     
     /// Признак активного режима рисования.
-    var drawingEnabled: Bool = false
+    var drawingEnabled = false
     
-    /// Идёт ли сейчас сохранение документа
-    var isSaving: Bool = false
+    /// Идёт ли сейчас сохранение документа.
+    var isSaving = false
     
-    /// Сообщение об ошибке сохранения
-    var saveErrorMessage: String?
+    /// Текущее состояние алерта сохранения.
+    var saveAlert: SaveAlert?
     
-    /// Флаг успешного сохранения
-    var showSaveSuccess: Bool = false
+    /// Коллбек после успешного сохранения файла.
+    var onSave: (@MainActor () -> Void)?
     
-    // MARK: Private Properties
+    // MARK: - Private properties
     
     /// Конкретный PDFView, с которым работает редактор.
     private var pdfView: PDFDocumentView?
@@ -29,22 +57,24 @@ final class PDFEditorViewModel {
     /// Сервис Supabase Storage для синхронизации PDF и аннотаций.
     private let storageService: SupabaseStorageServicing
     
-    /// Коллбек после успешного сохранения файла
-    var onSave: (() -> Void)?
+    /// Файловый менеджер (можно подменить в тестах).
+    private let fileManager: FileManager
     
-    // MARK: Init
+    // MARK: - Init
     
     init(
         pdfItem: PDFItem,
-        onSave: (() -> Void)? = nil,
-        storageService: SupabaseStorageServicing = SupabaseStorageService.shared
+        onSave: (@MainActor () -> Void)? = nil,
+        storageService: SupabaseStorageServicing = SupabaseStorageService.shared,
+        fileManager: FileManager = .default
     ) {
         self.pdfItem = pdfItem
         self.onSave = onSave
         self.storageService = storageService
+        self.fileManager = fileManager
     }
     
-    // MARK: Public API
+    // MARK: - Public API
     
     /// Привязывает созданный `PDFDocumentView`, чтобы управлять режимом рисования и сохранением.
     func configurePDFView(_ pdfView: PDFDocumentView) {
@@ -58,70 +88,61 @@ final class PDFEditorViewModel {
     }
     
     func save() async {
-        guard let destinationFolder = FileManager.default.urls(
+        guard !isSaving else { return }
+        
+        // Путь сохранения.
+        guard let destinationFolder = fileManager.urls(
             for: .documentDirectory,
             in: .userDomainMask
         ).first else {
-            print("❌ Не удалось получить путь сохранения")
+            saveAlert = .error(message: "Не удалось получить путь сохранения документа.")
             return
         }
-
-        let fileName = pdfItem.url.lastPathComponent
-
+        
+        // PDFView должен быть уже сконфигурирован.
         guard let pdfView else {
-            print("❌ PDFView не сконфигурирован")
+            saveAlert = .error(message: "Документ ещё не загружен. Повторите попытку позже.")
             return
         }
-
+        
         isSaving = true
-        saveErrorMessage = nil
-        showSaveSuccess = false
-
+        saveAlert = nil
+        defer { isSaving = false }
+        
+        let fileName = pdfItem.url.lastPathComponent
+        let localPDFURL = destinationFolder.appendingPathComponent(fileName)
+        let remoteId = pdfItem.url.deletingPathExtension().lastPathComponent
+        
         do {
-            // 1. ❗ Сначала единожды экспортируем аннотации
+            // 1. Экспорт и локальное сохранение JSON с аннотациями.
             let annotationsJSON = pdfView.exportAnnotationsJSON()
-            if let data = annotationsJSON,
-               let arr = try? JSONSerialization.jsonObject(with: data) as? [Any] {
-                print("📊 Аннотаций для отправки: \(arr.count) страниц")
-            }
-
-            // 2. Сохраняем JSON локально рядом с PDF (3.json)
-            if let data = annotationsJSON {
-                let jsonFileName = fileName.replacingOccurrences(of: ".pdf", with: ".json")
-                let jsonURL = destinationFolder.appendingPathComponent(jsonFileName)
-                try data.write(to: jsonURL)
-                print("✅ JSON аннотаций сохранён: \(jsonFileName)")
-            }
-
-            // 3. Локальное сохранение PDF
+            try saveAnnotationsIfNeeded(
+                annotationsJSON,
+                to: destinationFolder,
+                baseFileName: fileName
+            )
+            
+            // 2. Локальное сохранение PDF.
             try await pdfView.saveTo(url: destinationFolder, fileName: fileName)
-
-            // 4. Готовим путь к локальному PDF
-            let localPDF = destinationFolder.appendingPathComponent(fileName)
-
-            // 5. Формируем id для Supabase
-            let remoteId = pdfItem.url.deletingPathExtension().lastPathComponent
-
-            // 6. Отправляем PDF + ТОТ ЖЕ JSON в Supabase
+            
+            // 3. Отправка в Supabase (ошибка не ломает локальное сохранение).
             do {
                 _ = try await storageService.uploadDocument(
                     id: remoteId,
-                    localPDF: localPDF,
+                    localPDF: localPDFURL,
                     annotationsJSON: annotationsJSON
                 )
-                print("✅ Документ отправлен в Supabase с id=\(remoteId)")
             } catch {
                 print("⚠️ Ошибка отправки в Supabase: \(error)")
             }
-
-            showSaveSuccess = true
+            
+            // 4. Успех.
+            saveAlert = .success
             onSave?()
+            
         } catch {
-            saveErrorMessage = error.localizedDescription
-            print("❌ Ошибка сохранения PDF: \(error)")
+            saveAlert = .error(message: error.localizedDescription)
         }
-
-        isSaving = false
     }
     
     /// Отменяет последний штрих рисования через текущий PDFView.
@@ -132,5 +153,25 @@ final class PDFEditorViewModel {
     /// Повторяет отменённый штрих рисования через текущий PDFView.
     func redo() {
         pdfView?.redoDrawing()
+    }
+    
+    // MARK: - Private
+    
+    private func saveAnnotationsIfNeeded(
+        _ data: Data?,
+        to folder: URL,
+        baseFileName: String
+    ) throws {
+        guard let data else { return }
+        
+        let jsonFileName: String
+        if baseFileName.lowercased().hasSuffix(".pdf") {
+            jsonFileName = String(baseFileName.dropLast(4)) + ".json"
+        } else {
+            jsonFileName = baseFileName + ".json"
+        }
+        
+        let jsonURL = folder.appendingPathComponent(jsonFileName)
+        try data.write(to: jsonURL)
     }
 }

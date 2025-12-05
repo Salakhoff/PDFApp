@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Экран редактирования PDF.
-/// Показывает документ и кнопки управления режимом рисования/сохранением.
 struct PDFEditorView: View {
     @Bindable var viewModel: PDFEditorViewModel
-
+    
     var body: some View {
         ZStack(alignment: .topLeading) {
             PDFKitViewRepresentable(
@@ -18,80 +16,60 @@ struct PDFEditorView: View {
         .navigationTitle(viewModel.pdfItem.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Левая часть: Undo / Redo (только в режиме рисования)
-            ToolbarItemGroup(placement: .navigationBarLeading) {
-                if viewModel.drawingEnabled {
-                    Button {
-                        viewModel.undo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-
-                    Button {
-                        viewModel.redo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.forward")
-                    }
-                }
-            }
-
-            // Правая часть: рисование + сохранение
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+            leadingToolbar
+            trailingToolbar
+        }
+        .alert(item: $viewModel.saveAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.messageText),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+    }
+    
+    // MARK: - Toolbars
+    
+    @ToolbarContentBuilder
+    private var leadingToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            if viewModel.drawingEnabled {
                 Button {
-                    viewModel.toggleDrawing()
+                    viewModel.undo()
                 } label: {
-                    Image(systemName: viewModel.drawingEnabled ? "pencil.slash" : "pencil.tip")
+                    Image(systemName: "arrow.uturn.backward")
                 }
-
+                
                 Button {
-                    Task {
-                        await viewModel.save()
-                    }
+                    viewModel.redo()
                 } label: {
-                    if viewModel.isSaving {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "square.and.arrow.down")
-                    }
+                    Image(systemName: "arrow.uturn.forward")
                 }
-                .disabled(viewModel.isSaving)
             }
         }
-        // Алерт ошибки сохранения
-        .alert(
-            "Ошибка сохранения",
-            isPresented: Binding(
-                get: { viewModel.saveErrorMessage != nil },
-                set: { newValue in
-                    if !newValue {
-                        viewModel.saveErrorMessage = nil
-                    }
-                }
-            ),
-            actions: {
-                Button("OK", role: .cancel) { }
-            },
-            message: {
-                Text(viewModel.saveErrorMessage ?? "Неизвестная ошибка")
+    }
+    
+    @ToolbarContentBuilder
+    private var trailingToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                viewModel.toggleDrawing()
+            } label: {
+                Image(systemName: viewModel.drawingEnabled ? "pencil.slash" : "pencil.tip")
             }
-        )
-        // Алерт успешного сохранения
-        .alert(
-            "Готово",
-            isPresented: Binding(
-                get: { viewModel.showSaveSuccess },
-                set: { newValue in
-                    if !newValue {
-                        viewModel.showSaveSuccess = false
-                    }
+            
+            Button {
+                Task { @MainActor in
+                    await viewModel.save()
                 }
-            ),
-            actions: {
-                Button("OK", role: .cancel) { }
-            },
-            message: {
-                Text("PDF успешно сохранён.")
+            } label: {
+                if viewModel.isSaving {
+                    ProgressView()
+                } else {
+                    Image(systemName: "square.and.arrow.down")
+                }
             }
-        )
+            .disabled(viewModel.isSaving)
+        }
     }
 }
