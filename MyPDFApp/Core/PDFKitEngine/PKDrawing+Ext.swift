@@ -5,7 +5,8 @@ extension PKDrawing {
     /// Формирует DTO из видимых штрихов, учитывая маску после работы ластиком.
     func toDTO(pageIndex: Int, mediaBox: CGRect) -> DrawingAnnotationDTO {
         var strokesDTO: [StrokeDTO] = []
-        let bakedDrawing = (try? PKDrawing(data: self.dataRepresentation())) ?? self
+        
+        _ = (try? PKDrawing(data: self.dataRepresentation())) ?? self
         
         for stroke in strokes {
             let brushSize = stroke.path.first.map { Double($0.size.width) } ?? 1.0

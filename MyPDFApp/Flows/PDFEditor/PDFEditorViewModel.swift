@@ -21,9 +21,6 @@ final class PDFEditorViewModel {
     /// Флаг успешного сохранения
     var showSaveSuccess: Bool = false
     
-    /// Видимы ли миниатюры страниц.
-    var thumbnailVisible: Bool = false
-    
     // MARK: Private Properties
     
     /// Конкретный PDFView, с которым работает редактор.
@@ -135,10 +132,5 @@ final class PDFEditorViewModel {
     /// Повторяет отменённый штрих рисования через текущий PDFView.
     func redo() {
         pdfView?.redoDrawing()
-    }
-    
-    /// Переключает видимость панели миниатюр.
-    func toggleThumbnails() {
-        thumbnailVisible.toggle()
     }
 }

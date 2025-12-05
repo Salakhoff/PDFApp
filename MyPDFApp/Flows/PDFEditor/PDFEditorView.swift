@@ -10,27 +10,10 @@ struct PDFEditorView: View {
             PDFKitViewRepresentable(
                 pdfURL: viewModel.pdfItem.url,
                 drawingEnabled: viewModel.drawingEnabled,
-                showThumbnails: viewModel.thumbnailVisible,
                 onPDFViewCreated: { pdfView in
                     viewModel.configurePDFView(pdfView)
                 }
             )
-
-            // Круглая кнопка показа/скрытия миниатюр в левом верхнем углу поверх PDF.
-            Button {
-                viewModel.toggleThumbnails()
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(12)
-                    .background(
-                        Circle()
-                            .fill(Color.accentColor.opacity(0.85))
-                    )
-                    .shadow(radius: 4)
-            }
-            .padding()
         }
         .navigationTitle(viewModel.pdfItem.name)
         .navigationBarTitleDisplayMode(.inline)

@@ -84,8 +84,8 @@ final class SupabaseStorageService: SupabaseStorageServicing {
             _ = try await client.storage
                 .from(bucket)
                 .upload(
-                    path: pdfPath,
-                    file: pdfData,
+                    pdfPath,
+                    data: pdfData,
                     options: FileOptions(upsert: true)
                 )
             print("✅ PDF загружен в Supabase: \(pdfPath)")
@@ -107,8 +107,8 @@ final class SupabaseStorageService: SupabaseStorageServicing {
                 _ = try await client.storage
                     .from(bucket)
                     .upload(
-                        path: jsonPath,
-                        file: data,
+                        jsonPath,
+                        data: data,
                         options: FileOptions(upsert: true)
                     )
                 print("✅ JSON загружен в Supabase: \(jsonPath)")
