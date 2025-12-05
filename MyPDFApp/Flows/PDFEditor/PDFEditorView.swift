@@ -4,7 +4,7 @@ struct PDFEditorView: View {
     @Bindable var viewModel: PDFEditorViewModel
     
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .bottom) {
             PDFKitViewRepresentable(
                 pdfURL: viewModel.pdfItem.url,
                 drawingEnabled: viewModel.drawingEnabled,
@@ -12,6 +12,23 @@ struct PDFEditorView: View {
                     viewModel.configurePDFView(pdfView)
                 }
             )
+            
+            // Показываем палитру инструментов когда режим рисования активен
+            if viewModel.drawingEnabled {
+                VStack {
+                    Spacer()
+                    CustomToolPalette(
+                        tool: viewModel.toolStateManager.currentTool,
+                        isUsingPencil: .constant(false),
+                        onToolChanged: {
+                            // Обновляем инструмент во всех активных canvas
+                            viewModel.pdfView?.updateToolForAllCanvases()
+                        }
+                    )
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
+            }
         }
         .navigationTitle(viewModel.pdfItem.name)
         .navigationBarTitleDisplayMode(.inline)

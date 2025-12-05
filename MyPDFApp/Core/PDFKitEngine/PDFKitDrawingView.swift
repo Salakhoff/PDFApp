@@ -1,6 +1,7 @@
 import UIKit
 import PencilKit
 import PDFKit
+import Combine
 
 /// UIView-обёртка над PKCanvasView для рисования поверх PDF-страниц.
 /// Связывает PencilKit с PDFKit, синхронизируя рисунки с PDFDocumentPage.
@@ -26,6 +27,16 @@ final class PDFKitDrawingView: UIView, PKCanvasViewDelegate {
 
     /// Коллбек, вызываемый при каждом изменении рисунка для синхронизации с PDFDocumentPage.
     var onDrawingChanged: ((PKDrawing) -> Void)?
+    
+    /// Менеджер состояния инструментов рисования.
+    var toolStateManager: ToolStateManager? {
+        didSet {
+            setupToolObserver()
+        }
+    }
+    
+    /// Подписка на изменения инструмента.
+    private var toolObserver: AnyCancellable?
 
     // MARK: - Subviews
 
@@ -50,6 +61,10 @@ final class PDFKitDrawingView: UIView, PKCanvasViewDelegate {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+    
+    deinit {
+        toolObserver?.cancel()
+    }
 
     // MARK: - Public API
 
@@ -59,9 +74,30 @@ final class PDFKitDrawingView: UIView, PKCanvasViewDelegate {
         switch mode {
         case .drawing:
             canvasView.isUserInteractionEnabled = true
+            // Применяем инструмент при активации режима рисования
+            if let toolStateManager = toolStateManager {
+                toolStateManager.applyTool(to: canvasView)
+            }
         case .default:
             canvasView.isUserInteractionEnabled = false
         }
+    }
+    
+    // MARK: - Private Setup
+    
+    /// Настраивает observer для отслеживания изменений инструмента.
+    private func setupToolObserver() {
+        toolObserver?.cancel()
+        
+        guard let toolStateManager = toolStateManager else { return }
+        
+        // Используем Combine для отслеживания изменений через NotificationCenter
+        // Поскольку @Observable не предоставляет прямого способа подписки,
+        // будем обновлять инструмент при каждом изменении через таймер или другой механизм
+        // Для простоты будем обновлять при каждом изменении режима или при явном вызове
+        
+        // Альтернативный подход: обновлять инструмент при каждом изменении через polling
+        // Но лучше обновлять явно при изменении в CustomToolPalette
     }
 
     // MARK: - PKCanvasViewDelegate

@@ -28,6 +28,12 @@ final class PDFDocumentOverlay: NSObject, PDFPageOverlayViewProvider {
 
         // Переиспользуем существующую view, если она уже есть (для оптимизации производительности).
         if let existingView = pageToViewMapping[page] {
+            // ВАЖНО: Сначала сохраняем текущий drawing из canvas в страницу,
+            // если у view была другая страница (переиспользование view для другой страницы)
+            if let previousPage = existingView.page, previousPage !== page {
+                previousPage.drawing = existingView.canvasView.drawing
+            }
+            
             existingView.page = page
             overlayView = existingView
         } else {
@@ -38,6 +44,7 @@ final class PDFDocumentOverlay: NSObject, PDFPageOverlayViewProvider {
 
             // Настраиваем коллбек для синхронизации рисунков со страницей.
             canvasView.onDrawingChanged = { [weak page] drawing in
+                // Сохраняем изменения синхронно при каждом изменении
                 page?.drawing = drawing
             }
 
@@ -46,6 +53,7 @@ final class PDFDocumentOverlay: NSObject, PDFPageOverlayViewProvider {
         }
 
         // Восстанавливаем текущий рисунок страницы в canvas.
+        // ВАЖНО: Делаем это ПОСЛЕ настройки коллбека, чтобы не вызвать лишние обновления
         overlayView.canvasView.drawing = page.drawing
 
         return overlayView
@@ -63,6 +71,12 @@ final class PDFDocumentOverlay: NSObject, PDFPageOverlayViewProvider {
         willDisplayOverlayView overlayView: UIView,
         for page: PDFPage
     ) {
+        // При отображении страницы убеждаемся, что drawing синхронизирован
+        guard let overlayView = overlayView as? PDFKitDrawingView,
+              let page = page as? PDFDocumentPage else { return }
+        
+        // Сохраняем текущий drawing из canvas в страницу (на случай, если были изменения)
+        page.drawing = overlayView.canvasView.drawing
     }
 
     /// Вызывается перед скрытием overlay-вью.
@@ -82,10 +96,22 @@ final class PDFDocumentOverlay: NSObject, PDFPageOverlayViewProvider {
             let page = page as? PDFDocumentPage
         else { return }
 
-        // Сохраняем текущий рисунок в страницу перед удалением view.
+        // ВАЖНО: Сохраняем текущий рисунок в страницу перед удалением view.
+        // Это гарантирует, что все изменения (включая стирание ластиком) будут сохранены.
         page.drawing = overlayView.canvasView.drawing
 
         // Удаляем из словаря, чтобы освободить память (PDFKit будет переиспользовать view при следующем показе).
         pageToViewMapping.removeValue(forKey: page)
+    }
+    
+    // MARK: - Public API
+    
+    /// Принудительно сохраняет все изменения во всех активных overlay view.
+    /// Полезно вызывать перед сохранением документа или сменой страницы.
+    /// Гарантирует, что все изменения (включая стирание ластиком) синхронизированы с PDFDocumentPage.
+    func saveAllDrawings() {
+        for (page, overlayView) in pageToViewMapping {
+            page.drawing = overlayView.canvasView.drawing
+        }
     }
 }

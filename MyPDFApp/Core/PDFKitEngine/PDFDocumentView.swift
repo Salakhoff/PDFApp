@@ -18,10 +18,11 @@ final class PDFDocumentView: PDFView {
     /// Провайдер overlay-вью для добавления canvas рисования поверх страниц.
     private let overlay = PDFDocumentOverlay()
     
-    #warning("Выбор определенных инструментов доступен только с iOS 18.")
-    // init(toolItems: [PKToolPickerItem])
-    private let toolPicker = PKToolPicker()
+    /// Флаг активного режима рисования.
+    private var drawingEnabled = false
     
+    /// Менеджер состояния инструментов рисования.
+    var toolStateManager: ToolStateManager?
     
     // MARK: Init
     
@@ -79,8 +80,17 @@ final class PDFDocumentView: PDFView {
         }
     }
     
+    func updateToolForAllCanvases() {
+        guard let toolStateManager = toolStateManager else { return }
+        
+        overlay.pageToViewMapping.values.forEach { overlayView in
+            toolStateManager.applyTool(to: overlayView.canvasView)
+        }
+    }
+    
     /// Переключает режим работы между просмотром и рисованием.
     func drawing(isEnable: Bool) {
+        drawingEnabled = isEnable
         startDrawing(isEnable: isEnable)
         isScrollEnabled = !isEnable
     }
@@ -126,17 +136,17 @@ final class PDFDocumentView: PDFView {
             let pdfPage = currentPage as? PDFDocumentPage,
             let overlayView = overlay.pageToViewMapping[pdfPage]
         else { return }
-
+        
         overlayView.canvasView.undoManager?.undo()
     }
-
+    
     /// Повторяет последнюю отменённую операцию рисования на текущей странице.
     func redoDrawing() {
         guard
             let pdfPage = currentPage as? PDFDocumentPage,
             let overlayView = overlay.pageToViewMapping[pdfPage]
         else { return }
-
+        
         overlayView.canvasView.undoManager?.redo()
     }
     
@@ -200,53 +210,102 @@ private extension PDFDocumentView {
 
 // MARK: - Drawing Management
 
+// MARK: - Drawing Management
+
 private extension PDFDocumentView {
     
-    /// Активирует или деактивирует режим рисования на текущей странице.
-    /// Источником правды для состояния рисования считается видимость PKToolPicker (`isVisible`).
+    /// Получает все видимые страницы в текущей области просмотра.
+    /// - Returns: Массив видимых PDFDocumentPage
+    func getVisiblePages() -> [PDFDocumentPage] {
+        guard let document = document else { return [] }
+        
+        var visiblePages: [PDFDocumentPage] = []
+        let visibleRect = bounds
+        
+        // Проверяем каждую страницу документа
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) as? PDFDocumentPage else { continue }
+            
+            // Получаем bounds страницы в координатах PDFView
+            let pageBounds = convert(page.bounds(for: .mediaBox), from: page)
+            
+            // Проверяем, пересекается ли страница с видимой областью
+            if visibleRect.intersects(pageBounds) {
+                visiblePages.append(page)
+            }
+        }
+        
+        return visiblePages
+    }
+    
+    /// Активирует или деактивирует режим рисования на всех видимых страницах.
+    /// Применяет инструмент из ToolStateManager к canvas.
     ///
     /// - Parameter isEnable: Желаемое состояние режима рисования.
     func startDrawing(isEnable: Bool) {
-        guard let pdfPage = currentPage as? PDFDocumentPage else { return }
-        guard let overlayView = overlay.pageToViewMapping[pdfPage] else { return }
-
-        guard overlayView.window != nil else { return }
+        // Получаем все видимые страницы
+        let visiblePages = getVisiblePages()
         
-        let targetVisible = isEnable
-        let currentVisible = toolPicker.isVisible
-
-        overlayView.enable(mode: targetVisible ? .drawing : .default)
-        isScrollEnabled = !targetVisible
-
-        guard currentVisible != targetVisible else { return }
-
-        if targetVisible {
-            toolPicker.addObserver(overlayView.canvasView)
-            toolPicker.setVisible(true, forFirstResponder: overlayView.canvasView)
-            overlayView.canvasView.becomeFirstResponder()
-        } else {
-            toolPicker.setVisible(false, forFirstResponder: overlayView.canvasView)
-            toolPicker.removeObserver(overlayView.canvasView)
-            overlayView.canvasView.resignFirstResponder()
+        guard !visiblePages.isEmpty else { return }
+        
+        isScrollEnabled = !isEnable
+        
+        // Активируем рисование для всех видимых страниц
+        for pdfPage in visiblePages {
+            guard let overlayView = overlay.pageToViewMapping[pdfPage] else { continue }
+            guard overlayView.window != nil else { continue }
+            
+            overlayView.enable(mode: isEnable ? .drawing : .default)
+            
+            // Применяем инструмент из ToolStateManager
+            if isEnable, let toolStateManager = toolStateManager {
+                overlayView.toolStateManager = toolStateManager
+                toolStateManager.applyTool(to: overlayView.canvasView)
+                
+                // Делаем canvas первым responder только для текущей страницы
+                // (чтобы избежать конфликтов с несколькими first responder)
+                if pdfPage === currentPage {
+                    overlayView.canvasView.becomeFirstResponder()
+                }
+            } else {
+                // Убираем first responder только с текущей страницы
+                if pdfPage === currentPage {
+                    overlayView.canvasView.resignFirstResponder()
+                }
+            }
         }
     }
     
-    /// Сбрасывает состояние рисования и очищает связи с ToolPicker.
+    /// Сбрасывает состояние рисования.
     /// Необходимо вызывать перед загрузкой нового документа или перезагрузкой текущего.
     func resetDrawingState() {
         // Проходимся по всем активным overlay view
         overlay.pageToViewMapping.values.forEach { view in
-            // Если тулпикер был видим для этой вьюхи — скрываем
-            if toolPicker.isVisible {
-                toolPicker.setVisible(false, forFirstResponder: view.canvasView)
-            }
-            // Отписываемся и убираем фокус
-            toolPicker.removeObserver(view.canvasView)
             view.canvasView.resignFirstResponder()
         }
         
         // Очищаем кэш
         overlay.pageToViewMapping.removeAll()
+    }
+    
+    /// Обновляет состояние рисования для всех видимых страниц.
+    /// Вызывается при скролле для активации/деактивации canvas на новых видимых страницах.
+    func updateDrawingStateForVisiblePages() {
+        guard drawingEnabled else { return }
+        
+        let visiblePages = getVisiblePages()
+        
+        for pdfPage in visiblePages {
+            guard let overlayView = overlay.pageToViewMapping[pdfPage] else { continue }
+            
+            // Активируем рисование для видимых страниц
+            overlayView.enable(mode: .drawing)
+            
+            if let toolStateManager = toolStateManager {
+                overlayView.toolStateManager = toolStateManager
+                toolStateManager.applyTool(to: overlayView.canvasView)
+            }
+        }
     }
 }
 
@@ -275,6 +334,27 @@ extension PDFDocumentView: UIScrollViewDelegate {
             return
         }
         
+        // ВАЖНО: Сохраняем все изменения перед сменой страницы
+        overlay.saveAllDrawings()
+        
         currentPageIndex = index
+        
+        // Обновляем состояние рисования для всех видимых страниц
+        updateDrawingStateForVisiblePages()
+    }
+    
+    /// Сохраняет изменения при начале скролла (дополнительная защита).
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // Сохраняем изменения перед началом скролла
+        overlay.saveAllDrawings()
+    }
+    
+    /// Обновляет состояние при скролле (для плавной активации новых страниц).
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        // Обновляем состояние рисования для всех видимых страниц при скролле
+        // Это позволяет активировать canvas на страницах, которые становятся видимыми
+        if drawingEnabled {
+            updateDrawingStateForVisiblePages()
+        }
     }
 }

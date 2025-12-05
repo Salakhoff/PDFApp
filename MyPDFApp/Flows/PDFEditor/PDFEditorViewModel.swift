@@ -49,10 +49,13 @@ final class PDFEditorViewModel {
     /// Коллбек после успешного сохранения файла.
     var onSave: (@MainActor () -> Void)?
     
+    /// Менеджер состояния инструментов рисования.
+    let toolStateManager = ToolStateManager()
+    
     // MARK: - Private properties
     
     /// Конкретный PDFView, с которым работает редактор.
-    private var pdfView: PDFDocumentView?
+    var pdfView: PDFDocumentView?
     
     /// Сервис Supabase Storage для синхронизации PDF и аннотаций.
     private let storageService: SupabaseStorageServicing
@@ -65,7 +68,7 @@ final class PDFEditorViewModel {
     init(
         pdfItem: PDFItem,
         onSave: (@MainActor () -> Void)? = nil,
-        storageService: SupabaseStorageServicing = SupabaseStorageService.shared,
+        storageService: SupabaseStorageServicing,
         fileManager: FileManager = .default
     ) {
         self.pdfItem = pdfItem
@@ -74,11 +77,12 @@ final class PDFEditorViewModel {
         self.fileManager = fileManager
     }
     
-    // MARK: - Public API
+    // MARK: Public API
     
     /// Привязывает созданный `PDFDocumentView`, чтобы управлять режимом рисования и сохранением.
     func configurePDFView(_ pdfView: PDFDocumentView) {
         self.pdfView = pdfView
+        pdfView.toolStateManager = toolStateManager
     }
     
     /// Переключает режим рисования и уведомляет PDF-вью.
@@ -155,7 +159,7 @@ final class PDFEditorViewModel {
         pdfView?.redoDrawing()
     }
     
-    // MARK: - Private
+    // MARK: Private
     
     private func saveAnnotationsIfNeeded(
         _ data: Data?,
