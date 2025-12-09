@@ -24,6 +24,15 @@ final class PDFDocumentView: PDFView {
     /// Менеджер состояния инструментов рисования.
     var toolStateManager: ToolStateManager?
     
+    /// Коллбек при загрузке документа: totalPages, currentIndex
+    var onDocumentLoaded: ((Int, Int) -> Void)?
+    
+    /// Коллбек при смене страницы
+    var onPageIndexChanged: ((Int) -> Void)?
+    
+    /// Таймер для периодической проверки текущей страницы (fallback механизм).
+    private var pageCheckTimer: Timer?
+    
     // MARK: Init
     
     required init?(coder: NSCoder) {
@@ -153,6 +162,70 @@ final class PDFDocumentView: PDFView {
     func exportAnnotationsJSON() -> Data? {
         pdfDocument?.exportAnnotationsAsJSON()
     }
+    
+    /// Плавно переходит к указанной странице документа.
+    /// - Parameter index: Индекс страницы (начиная с 0).
+    func goToPage(at index: Int) {
+        guard let document = document,
+              index >= 0,
+              index < document.pageCount,
+              let page = document.page(at: index) else {
+            return
+        }
+        
+        // Плавная анимация перехода к странице
+        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseInOut) {
+            self.go(to: page)
+        } completion: { _ in
+            // Обновляем индекс текущей страницы после завершения анимации
+            self.updateCurrentPageIndex()
+        }
+    }
+    
+    /// Возвращает PDFDocument для генерации миниатюр.
+    var pdfDocumentForThumbnails: PDFDocument? {
+        document
+    }
+    
+    /// Определяет текущую страницу как страницу с максимальной видимой площадью.
+    func updateCurrentPageIndex() {
+        guard let document = document else { return }
+        
+        let visibleRect = bounds
+        var bestIndex = currentPageIndex
+        var maxVisibleArea: CGFloat = 0
+        
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            
+            // Берём cropBox (или mediaBox — если так точнее для вашего документа)
+            let pageRect = convert(page.bounds(for: .cropBox), from: page)
+            
+            let intersection = visibleRect.intersection(pageRect)
+            let area = max(0, intersection.width) * max(0, intersection.height)
+            
+            if area > maxVisibleArea {
+                maxVisibleArea = area
+                bestIndex = index
+            }
+        }
+        
+        // Обновляем только при реальной смене страницы
+        if maxVisibleArea > 0, bestIndex != currentPageIndex {
+            currentPageIndex = bestIndex
+            onPageIndexChanged?(bestIndex)
+        }
+    }
+    
+    /// Обрабатывает смену страницы от PDFView (NotificationCenter).
+    @objc private func handlePageChanged(_ notification: Notification) {
+        updateCurrentPageIndex()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        pageCheckTimer?.invalidate()
+    }
 }
 
 // MARK: - Private Configuration
@@ -199,6 +272,35 @@ private extension PDFDocumentView {
         
         // Привязываем загруженный PDF-документ к PDFView.
         document = pdfDocument?.pdfDocument
+        
+        // Подписываемся на уведомления о смене страницы
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePageChanged),
+            name: .PDFViewPageChanged,
+            object: self
+        )
+        
+        // Делегат для событий скролла, чтобы обновлять currentPageIndex
+        privateScrollView?.delegate = self
+        
+        // Запускаем таймер для периодической проверки текущей страницы (каждые 0.1 секунды)
+        pageCheckTimer?.invalidate()
+        pageCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.updateCurrentPageIndex()
+        }
+        
+        // Важно: добавляем таймер в RunLoop для работы в режиме скролла
+        if let timer = pageCheckTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        
+        print("✅ Таймер проверки страниц запущен")
+        
+        let totalPages = document?.pageCount ?? 0
+        updateCurrentPageIndex()
+        onDocumentLoaded?(totalPages, currentPageIndex)
         
         // Настраиваем масштабирование: минимум = размер по экрану, максимум = 4x для детального просмотра.
         minScaleFactor = scaleFactorForSizeToFit
@@ -279,6 +381,10 @@ private extension PDFDocumentView {
     /// Сбрасывает состояние рисования.
     /// Необходимо вызывать перед загрузкой нового документа или перезагрузкой текущего.
     func resetDrawingState() {
+        // Останавливаем таймер проверки страниц
+        pageCheckTimer?.invalidate()
+        pageCheckTimer = nil
+        
         // Проходимся по всем активным overlay view
         overlay.pageToViewMapping.values.forEach { view in
             view.canvasView.resignFirstResponder()
@@ -327,17 +433,11 @@ extension PDFDocumentView: UIScrollViewDelegate {
     /// Обновляет индекс текущей страницы после завершения скролла.
     /// Вызывается автоматически при остановке прокрутки для отслеживания видимой страницы.
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        guard
-            let page = currentPage,
-            let index = document?.index(for: page)
-        else {
-            return
-        }
-        
         // ВАЖНО: Сохраняем все изменения перед сменой страницы
         overlay.saveAllDrawings()
         
-        currentPageIndex = index
+        // Обновляем индекс текущей страницы
+        updateCurrentPageIndex()
         
         // Обновляем состояние рисования для всех видимых страниц
         updateDrawingStateForVisiblePages()
@@ -351,6 +451,10 @@ extension PDFDocumentView: UIScrollViewDelegate {
     
     /// Обновляет состояние при скролле (для плавной активации новых страниц).
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        
+        // Обновляем индекс текущей страницы при скролле
+        updateCurrentPageIndex()
+        
         // Обновляем состояние рисования для всех видимых страниц при скролле
         // Это позволяет активировать canvas на страницах, которые становятся видимыми
         if drawingEnabled {

@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 @MainActor
 @Observable
@@ -57,11 +58,20 @@ final class PDFEditorViewModel {
     /// Конкретный PDFView, с которым работает редактор.
     var pdfView: PDFDocumentView?
     
+    /// Флаг отображения thumbnail view с миниатюрами страниц.
+    var showThumbnails = false
+    
     /// Сервис Supabase Storage для синхронизации PDF и аннотаций.
     private let storageService: SupabaseStorageServicing
     
     /// Файловый менеджер (можно подменить в тестах).
     private let fileManager: FileManager
+    
+    /// Текущая страница (для SwiftUI)
+    var currentPageIndex: Int = 0
+    
+    /// Кол-во страниц (для SwiftUI)
+    var totalPagesCount: Int = 0
     
     // MARK: - Init
     
@@ -83,6 +93,18 @@ final class PDFEditorViewModel {
     func configurePDFView(_ pdfView: PDFDocumentView) {
         self.pdfView = pdfView
         pdfView.toolStateManager = toolStateManager
+        
+        pdfView.onDocumentLoaded = { [weak self] totalPages, currentIndex in
+            print("📥 onDocumentLoaded: totalPages=\(totalPages), currentIndex=\(currentIndex)")
+            self?.totalPagesCount = totalPages
+            self?.currentPageIndex = currentIndex
+        }
+        
+        pdfView.onPageIndexChanged = { [weak self] index in
+            print("📥 onPageIndexChanged вызван с индексом: \(index)")
+            self?.currentPageIndex = index
+            print("📥 currentPageIndex в ViewModel теперь: \(self?.currentPageIndex ?? -1)")
+        }
     }
     
     /// Переключает режим рисования и уведомляет PDF-вью.
@@ -157,6 +179,22 @@ final class PDFEditorViewModel {
     /// Повторяет отменённый штрих рисования через текущий PDFView.
     func redo() {
         pdfView?.redoDrawing()
+    }
+    
+    /// Переключает отображение thumbnail view с миниатюрами страниц.
+    func toggleThumbnails() {
+        showThumbnails.toggle()
+    }
+    
+    /// Переходит к указанной странице в PDF-документе.
+    /// - Parameter index: Индекс страницы (начиная с 0).
+    func goToPage(at index: Int) {
+        pdfView?.goToPage(at: index)
+    }
+    
+    /// Возвращает PDFDocument для генерации миниатюр.
+    var pdfDocumentForThumbnails: PDFDocument? {
+        pdfView?.pdfDocumentForThumbnails
     }
     
     // MARK: Private
