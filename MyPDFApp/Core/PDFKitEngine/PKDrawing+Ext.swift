@@ -6,8 +6,6 @@ extension PKDrawing {
     func toDTO(pageIndex: Int, mediaBox: CGRect) -> DrawingAnnotationDTO {
         var strokesDTO: [StrokeDTO] = []
         
-        _ = (try? PKDrawing(data: self.dataRepresentation())) ?? self
-        
         for stroke in strokes {
             let brushSize = stroke.path.first.map { Double($0.size.width) } ?? 1.0
             let toolShortName = shortToolName(from: stroke.ink.inkType)

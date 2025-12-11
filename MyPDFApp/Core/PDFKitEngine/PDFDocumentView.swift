@@ -107,6 +107,9 @@ final class PDFDocumentView: PDFView {
     func saveTo(url: URL, fileName: String) async throws {
         guard let document = pdfDocument else { return }
         
+        // 0. Синхронизируем все рисунки из canvas в страницы перед сохранением
+        overlay.saveAllDrawings()
+        
         // 1. Пути к файлам
         let pdfURL = url.appendingPathComponent(fileName)
         
@@ -160,7 +163,8 @@ final class PDFDocumentView: PDFView {
     }
     
     func exportAnnotationsJSON() -> Data? {
-        pdfDocument?.exportAnnotationsAsJSON()
+        overlay.saveAllDrawings()
+        return pdfDocument?.exportAnnotationsAsJSON()
     }
     
     /// Плавно переходит к указанной странице документа.
